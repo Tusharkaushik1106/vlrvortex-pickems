@@ -597,6 +597,141 @@ function Bracket({
   );
 }
 
+// ─── Leaderboard Types ───────────────────────────────────────────
+interface LeaderboardEntry {
+  username: string;
+  points: number;
+  correct: number;
+  wrong: number;
+  total: number;
+}
+
+// ─── Leaderboard Panel ──────────────────────────────────────────
+function LeaderboardPanel({
+  open,
+  onClose,
+  entries,
+  currentUser,
+  totalDecided,
+}: {
+  open: boolean;
+  onClose: () => void;
+  entries: LeaderboardEntry[];
+  currentUser: string | null;
+  totalDecided: number;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          <motion.div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+          />
+          <motion.div
+            className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-[#0E0E1A] border-l border-[#FF4500]/15 z-50 flex flex-col shadow-2xl shadow-black/50"
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-[#252542]">
+              <div>
+                <h2 className="text-lg font-black text-white">LEADERBOARD</h2>
+                <p className="text-[10px] text-[#6B6B80] tracking-wider font-bold">
+                  {totalDecided} / 13 MATCHES DECIDED
+                </p>
+              </div>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 rounded-lg bg-[#252542] flex items-center justify-center text-[#A0A0B8] hover:text-white hover:bg-[#FF4500]/20 transition"
+              >
+                &#10005;
+              </button>
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              {entries.length === 0 ? (
+                <div className="text-center text-[#6B6B80] text-sm py-16">
+                  No picks submitted yet
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {entries.map((entry, idx) => {
+                    const rank = idx + 1;
+                    const isMe = entry.username === currentUser;
+                    const isTop3 = rank <= 3;
+                    const medalColors = ["#FFD700", "#C0C0C0", "#CD7F32"];
+
+                    return (
+                      <motion.div
+                        key={entry.username}
+                        className={`flex items-center gap-3 px-3 py-3 rounded-xl border transition-all ${
+                          isMe
+                            ? "bg-[#FF4500]/10 border-[#FF4500]/30"
+                            : "bg-[#1A1A2E]/60 border-[#252542]/50"
+                        }`}
+                        initial={{ opacity: 0, x: 30 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.03 }}
+                      >
+                        {/* Rank */}
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                            isTop3
+                              ? "text-[#0A0A0F]"
+                              : "bg-[#252542] text-[#A0A0B8]"
+                          }`}
+                          style={isTop3 ? { background: medalColors[rank - 1] } : {}}
+                        >
+                          {rank}
+                        </div>
+
+                        {/* Username */}
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-bold truncate ${isMe ? "text-[#FF4500]" : "text-white"}`}>
+                            {entry.username}
+                            {isMe && <span className="text-[10px] text-[#FF4500]/60 ml-1">(you)</span>}
+                          </div>
+                          <div className="flex gap-2 text-[10px] font-medium">
+                            <span className="text-[#00FF88]">{entry.correct} correct</span>
+                            <span className="text-[#6B6B80]">&middot;</span>
+                            <span className="text-[#FF3366]">{entry.wrong} wrong</span>
+                          </div>
+                        </div>
+
+                        {/* Points */}
+                        <div className="text-right shrink-0">
+                          <div className={`text-lg font-black ${isTop3 ? "text-[#FFD700]" : "text-white"}`}>
+                            {entry.points}
+                          </div>
+                          <div className="text-[9px] text-[#6B6B80] font-bold tracking-wider">PTS</div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-[#252542] text-center">
+              <p className="text-[10px] text-[#6B6B80] font-medium">
+                1 point per correct pick &middot; Updates live
+              </p>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────
 export default function Home() {
   const [username, setUsername] = useState<string | null>(null);
@@ -609,6 +744,9 @@ export default function Home() {
   const [regError, setRegError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [totalDecided, setTotalDecided] = useState(0);
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -627,25 +765,31 @@ export default function Home() {
       fetch(`/api/picks?username=${username}`).then((r) => r.json()),
       fetch("/api/admin/results").then((r) => r.json()),
       fetch("/api/stats").then((r) => r.json()),
-    ]).then(([pickData, resultData, statsData]) => {
+      fetch("/api/leaderboard").then((r) => r.json()),
+    ]).then(([pickData, resultData, statsData, lbData]) => {
       if (pickData.picks) {
         setPicks(pickData.picks);
         setSubmitted(true);
       }
       if (resultData.results) setOfficialResults(resultData.results);
       if (statsData.count != null) setPickCount(statsData.count);
+      if (lbData.leaderboard) setLeaderboard(lbData.leaderboard);
+      if (lbData.totalDecided != null) setTotalDecided(lbData.totalDecided);
     }).catch(() => {});
   }, [username]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const [resultData, statsData] = await Promise.all([
+        const [resultData, statsData, lbData] = await Promise.all([
           fetch("/api/admin/results").then((r) => r.json()),
           fetch("/api/stats").then((r) => r.json()),
+          fetch("/api/leaderboard").then((r) => r.json()),
         ]);
         if (resultData.results) setOfficialResults(resultData.results);
         if (statsData.count != null) setPickCount(statsData.count);
+        if (lbData.leaderboard) setLeaderboard(lbData.leaderboard);
+        if (lbData.totalDecided != null) setTotalDecided(lbData.totalDecided);
       } catch {}
     }, 30000);
     return () => clearInterval(interval);
@@ -753,6 +897,14 @@ export default function Home() {
         )}
       </AnimatePresence>
 
+      <LeaderboardPanel
+        open={showLeaderboard}
+        onClose={() => setShowLeaderboard(false)}
+        entries={leaderboard}
+        currentUser={username}
+        totalDecided={totalDecided}
+      />
+
       {/* Header */}
       <motion.header
         className="relative z-20 border-b border-[#FF4500]/10 bg-[#0E0E1A]/80 backdrop-blur-xl"
@@ -775,6 +927,18 @@ export default function Home() {
 
           <div className="flex items-center gap-3 flex-wrap">
             <PickemCounter count={pickCount} />
+
+            <motion.button
+              onClick={() => setShowLeaderboard(true)}
+              className="flex items-center gap-2 bg-[#FFD700]/10 border border-[#FFD700]/20 rounded-xl px-4 py-2.5 text-[#FFD700] text-xs font-bold tracking-wider hover:bg-[#FFD700]/15 transition"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.6 }}
+            >
+              <span className="text-base">&#9813;</span> LEADERBOARD
+            </motion.button>
 
             {username && (
               <motion.div
